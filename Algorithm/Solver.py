@@ -53,7 +53,7 @@ class Solver:
         self.errorList.append(err)
 
         for t in range(maxIter):
-            print(f"\n============== Iteration {t+1}: ====err={err}=========")
+            print(f"\n============== Iteration {t+1}: ====err={np.linalg.norm(w - wopt)}=========")
             w_old = w.copy()
 
             executor = self.executorList[0]

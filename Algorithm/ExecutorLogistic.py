@@ -171,9 +171,7 @@ class Executor:
         #optimization gain
         theta = numpy.linalg.norm(gVec-Y @ alpha_qr) /numpy.linalg.norm(gVec)
         #Newton-GMRES gain
-        alpha_Newton, newton_gain, theory_gain = self.computeNewton_gain(self.computeGrad(), local_epochs)
-        print( '\nNewton-GMRES solution:', alpha_Newton.flatten())  
-        print( '   Length of ptilde:',  numpy.linalg.norm( S @ alpha_Newton), 'rtilde', numpy.linalg.norm( Y @ alpha_Newton - gVec  )  )
+        newton_gain, theory_gain = self.computeNewton_gain(self.computeGrad(), local_epochs)
         print('\ntheory_Upper_Bound:', theory_gain)
         print('Newton-GMRES gain:', newton_gain)
         print('AAP gain', theta )
@@ -185,21 +183,6 @@ class Executor:
         
         return pVec,theta,min(Sigu),newton_gain
 
-
-    #GD method, aka picard iteration
-    def multiGD(self,w, lr=1,local_epochs = 3):
-        #print('multiGD LR: ',lr)
-
-        if self.dtype_ == np.longdouble:
-            lr = np.longdouble(lr)
-        if self.dtype_ == np.double:  
-            lr = float(lr)
-
-        x = w.copy()
-        for i in range(local_epochs):
-            gradx = self.computeGrad_(x)
-            x = x - lr*gradx
-        return x, self.computeGrad_(x)
 
 
 
@@ -219,8 +202,9 @@ class Executor:
         print('residual norm:', bnorm)
         b = b/bnorm #normalize b
 
+        #generate the Krylov sequence Af_t, A^2f_t,... Note that it is different with the true krylov subspace f_t, Af_t,A^2f_t,...
         p = b.astype(self.dtype_)   #since the residual gVec is converging to 0, so it's better to normalize it now
-        basis = []
+        basis = []  #this basis is with A_t
         for i in range(m):
             p = J @ p
             basis.append( p.copy() )
@@ -233,7 +217,7 @@ class Executor:
         print('singular values', Sigu)
 
 
-        #method 1
+        #method 1 to get the projection of AK_m(A, f_t)
         solution_lstsq  = numpy.linalg.lstsq(basis.astype(np.float64), b.astype(np.float64))[0]
         
         #method 2
@@ -242,8 +226,18 @@ class Executor:
         solution_qr = np.linalg.solve(R, Q_T_b)        
         print( 'norm(solution_lstsq-solutionqr)',  numpy.linalg.norm( solution_lstsq -  solution_qr )  )  
 
-        res = numpy.linalg.norm(basis @ solution_qr - b )      
-        #print('gain:', res)
+
+        #Now we know the projection Ap as basis @ solution_qr, we need to solve the real p
+        r_ = (basis @ solution_qr).astype(np.float64)
+        # solve Ap = (Ap)
+        p_solve = np.linalg.solve( J.astype(np.float64), r_ )
+
+
+        res = numpy.linalg.norm(basis @ solution_qr - b )   
+        print( 'Newton-GMRES projection solution:', solution_qr.flatten())  
+        #print( 'Newton-GMRES p solution:', p_solve.flatten())  
+        print( '   length of p:',  numpy.linalg.norm(  p_solve ) )   
+        print( '   residual/|f_t|:', res)
         
 
 
@@ -257,7 +251,7 @@ class Executor:
 
         
 
-        return solution_qr, res, 2 * (s - 1)**m / (s + 1)**m
+        return res, 2 * (s - 1)**m / (s + 1)**m
 
 
     def testSY(self, gVec, m, S,Y,lr):
@@ -285,7 +279,7 @@ class Executor:
         expZVec = numpy.sqrt(expZVec) / (1 + expZVec)    
         A = self.xMat * (expZVec / numpy.sqrt(self.s, dtype=self.dtype_))       
         J = numpy.dot(A.T,A)+ self.gamma *numpy.eye(self.d).astype(self.dtype_) 
-        G = numpy.eye(self.d) - lr*J #g'(x_t)
+        G = numpy.eye(self.d).astype(self.dtype_) - lr*J #g'(x_t)
 
         p = b.copy()   
         basis = []
@@ -313,20 +307,6 @@ class Executor:
         return None
 
 
-    
-    def computeNewton(self, gVec):
-        zVec = numpy.dot(self.xMat, self.w)
-        expZVec = numpy.exp(zVec, dtype=self.dtype_)
-        expZVec = numpy.sqrt(expZVec) / (1 + expZVec)
-
-        aMat = self.xMat * (expZVec / numpy.sqrt(self.s))
-        
-        #pVec = CG.svrgSolver(aMat, gVec, self.gamma, alpha=0.6, Tol=self.gtol, MaxIter=self.maxiter)
-        pVec = CG.cgSolver(aMat, gVec, self.gamma, Tol=self.gtol, MaxIter=self.maxiter)
-        #pVec = CG.cgSolver2(numpy.dot(aMat.T, aMat), gVec, self.gamma, Tol=self.gtol, MaxIter=self.maxiter)
-        self.gtol *= 0.5 # decrease the convergence error paramter of CG
-        
-        return pVec
 
     
     
