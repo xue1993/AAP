@@ -6,12 +6,13 @@ home_dir = '../'
 sys.path.append(home_dir)
 from Algorithm.Logistic_test import Executor as  Logistic_test
 from Algorithm.ExecutorLogistic import Executor as Logistic
+from Algorithm.ExecutorQuadratic import Executor as Quadratic
 
 EtaList = 1 / (4 ** np.arange(0, 10))
 
 class Solver:
     
-    def __init__(self, local_epochs=5, eta0=1.0, C=1.0, dtype_ = np.double, algo_='AAP', problem_='logistic'):
+    def __init__(self, local_epochs=5, eta0=1.0, C=1.0, dtype_ = np.double, algo_='AAP', problem_='Quadratic'):
 
         self.tolConverge = 1e-13
         self.eta0 = float(eta0)
@@ -31,11 +32,14 @@ class Solver:
         n, d = xMat.shape
         if self.problem == 'Logistic_test':
             self.executor = Logistic_test(xMat, yVec, dtype_= self.dtype_)
+        elif self.problem == 'Quadratic':
+            self.executor = Quadratic(xMat, yVec, dtype_= self.dtype_)
         else:
             self.executor = Logistic(xMat, yVec, dtype_= self.dtype_)
         self.n, self.d = n, d
 
     def train(self, gamma, wopt, maxIter=20, isSearch=False, newtonTol=1e-100, newtonMaxIter=20):
+        
 
         wnorm = np.linalg.norm(wopt.astype(np.float64))
         w = np.zeros((self.d, 1), dtype=np.float64)
@@ -49,8 +53,6 @@ class Solver:
 
         self.etaList = EtaList
         self.numEta = len(self.etaList)
-
-
         
         self.executor.setParam(gamma, newtonTol, newtonMaxIter, isSearch, self.etaList)     
 
@@ -76,14 +78,14 @@ class Solver:
             else: 
                 p =  self.executor.Picard(lr=self.eta0, local_epochs=self.local_epochs)
                
-
+            
             self.executor.updateP(p)            
             self.executor.updateW()
             w -= p
             err = np.linalg.norm(w - wopt) / wnorm
             self.errorList.append(err)
             if err < self.tolConverge or np.isnan(w).any() or self.executor.stop:
-                print(f"Iteration {t}: Convergence achieved or numerical instability detected.")
+                print(f"Iteration {t}: Convergence achieved, or stop={ self.executor.stop}.")
                 break
 
         return self.errorList
