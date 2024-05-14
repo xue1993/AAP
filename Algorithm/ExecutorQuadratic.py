@@ -26,9 +26,9 @@ class Executor:
 
         
 
-    def setParam(self, a,b,c,isSearch,  etaList):   
+    def setParam(self, a, isSearch,  etaList):   
 
-
+        self.damping = 1 #damping ratio
         self.isSearch = isSearch
         self.etaList = np.array(etaList, dtype=self.dtype_)
         self.numEta = len(self.etaList)
@@ -119,7 +119,6 @@ class Executor:
         local_gradients = numpy.hstack( local_gradients, dtype=self.dtype_ )
 
 
-        damping = 1 #damping ratio
         S = numpy.diff( iterations ).astype(self.dtype_) 
         Y = numpy.diff( local_gradients ).astype(self.dtype_) 
         print('S.shape:  ', S.shape)
@@ -128,7 +127,7 @@ class Executor:
         alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
       
         #Update AAP direction with alpha_lstsq solutin
-        pVec =   damping *lr* gVec + (S - damping *lr* Y) @ alpha_lstsq 
+        pVec =   self.damping *lr* gVec + (S - self.damping *lr* Y) @ alpha_lstsq 
         print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
         
         return pVec
@@ -136,45 +135,45 @@ class Executor:
     
     #Classical AA(m) method
     def AA( self,  lr=1, m = 5 ):     
-
-
         #intialization
-        x = self.w.copy().astype(self.dtype_) 
-        gVec = self.computeGrad_(x).astype(self.dtype_)
-        print( numpy.linalg.norm(gVec) ) 
+        x = self.w.copy().astype(self.dtype_)         
 
         if self.dtype_ == np.longdouble:
             lr = np.longdouble(lr)
         if self.dtype_ == np.double:  
             lr = float(lr)
+
+        for i in range(m+1):
+            gVec = self.computeGrad_(x).astype(self.dtype_)
+            print( numpy.linalg.norm(gVec) )
+
+            #Update the history points
+            self.iterations_history.append( x.copy() )
+            self.local_gradients_history.append( gVec.copy()  )
+
+            if len( self.iterations_history )> (m+1):
+                self.iterations_history.pop(0)
+                self.local_gradients_history.pop(0)               
+
+                
+            #Update S Y matrix
+            iterations = numpy.hstack( self.iterations_history, dtype=self.dtype_ )
+            local_gradients = numpy.hstack( self.local_gradients_history, dtype=self.dtype_ )
+
+            S = numpy.diff( iterations ).astype(self.dtype_) 
+            Y = numpy.diff( local_gradients ).astype(self.dtype_) 
+            print('S.shape:  ', S.shape)
+    
+            #solve the unconstrained LS problem
+            alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
         
+            #Update AAP direction with alpha_lstsq solutin
+            pVec =   self.damping * lr *gVec + (S - self.damping *lr *Y) @ alpha_lstsq 
+            print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
 
-        #Update the history points
-        self.iterations_history.append( x.copy() )
-        self.local_gradients_history.append( gVec.copy()  )
-
-        if len( self.iterations_history )> (m+1):
-            self.iterations_history.pop(0)
-            self.local_gradients_history.pop(0)               
-
-            
-        #Update S Y matrix
-        iterations = numpy.hstack( self.iterations_history, dtype=self.dtype_ )
-        local_gradients = numpy.hstack( self.local_gradients_history, dtype=self.dtype_ )
-
-        damping = 1 #damping ratio
-        S = numpy.diff( iterations ).astype(self.dtype_) 
-        Y = numpy.diff( local_gradients ).astype(self.dtype_) 
-        print('S.shape:  ', S.shape)
- 
-        #solve the unconstrained LS problem
-        alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
-      
-        #Update AAP direction with alpha_lstsq solutin
-        pVec =   damping * lr *gVec + (S - damping *lr *Y) @ alpha_lstsq 
-        print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
+            x -= pVec
         
-        return pVec
+        return self.w-x
 
 
     #resAA method
@@ -204,7 +203,6 @@ class Executor:
             local_gradients = numpy.hstack( local_gradients_list, dtype=self.dtype_ )
 
 
-            damping = 1
             S = numpy.diff( iterations ).astype(self.dtype_) 
             Y = numpy.diff( local_gradients ).astype(self.dtype_) 
             print('S.shape:  ', S.shape)
@@ -213,7 +211,7 @@ class Executor:
             alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
         
             #Update AAP direction with alpha_lstsq solutin
-            pVec =   damping *lr* gVec + (S - damping *lr *Y) @ alpha_lstsq 
+            pVec =   self.damping *lr* gVec + (S - self.damping *lr *Y) @ alpha_lstsq 
             print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
 
             x -= pVec

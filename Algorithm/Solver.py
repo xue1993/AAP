@@ -4,7 +4,7 @@ import sys
 # Append the home directory to system path for importing custom modules
 home_dir = '../'
 sys.path.append(home_dir)
-from Algorithm.Logistic_test import Executor as  Logistic_test
+from Algorithm.LogisticTest import Executor as  LogisticTest
 from Algorithm.ExecutorLogistic import Executor as Logistic
 from Algorithm.ExecutorQuadratic import Executor as Quadratic
 
@@ -30,15 +30,21 @@ class Solver:
         """
         #below is pass the logistic regression data with optional 
         n, d = xMat.shape
-        if self.problem == 'Logistic_test':
+        if self.problem == 'LogisticTest':
+            print('LogisticTest activated')
+            self.executor = Logistic_test(xMat, yVec, dtype_= self.dtype_)
+        elif self.problem == 'QuadraticTest':
+            print('QuadraticTest activated')
             self.executor = Logistic_test(xMat, yVec, dtype_= self.dtype_)
         elif self.problem == 'Quadratic':
+            print('Quadratic activated')
             self.executor = Quadratic(xMat, yVec, dtype_= self.dtype_)
         else:
+            print('Logistic activated')
             self.executor = Logistic(xMat, yVec, dtype_= self.dtype_)
         self.n, self.d = n, d
 
-    def train(self, gamma, wopt, maxIter=20, isSearch=False, newtonTol=1e-100, newtonMaxIter=20):
+    def train(self, gamma, wopt, maxIter=20, isSearch=False):
         
 
         wnorm = np.linalg.norm(wopt.astype(np.float64))
@@ -54,7 +60,7 @@ class Solver:
         self.etaList = EtaList
         self.numEta = len(self.etaList)
         
-        self.executor.setParam(gamma, newtonTol, newtonMaxIter, isSearch, self.etaList)     
+        self.executor.setParam(gamma, isSearch, self.etaList)     
 
         for t in range(maxIter):
             print(f"\n============== Iteration {t+1}: ====error={np.linalg.norm(w - wopt)}=========")

@@ -2,41 +2,37 @@ import numpy
 import numpy as np
 from scipy import optimize 
 
-# This code contains many operations to make sure the data type is as required
-#Note that numpy.linalg.lstsq and numpy.linalg.svd do not support longdouble, thus the input for them is converted back to np.double
+# quadratic minimization problem: 0.5 x^TAx - bx
+# resudial/gradient: Ax-b
+# Hessian: A
+
+#fixed point problem g(x) = x - lr(Ax-b)
 
 import Util.CG as CG
     
 class Executor:
-    def __init__(self, xMat, yVec, dtype_=np.double):
-
+    def __init__(self, A, b, dtype_=np.longdouble):
+        
         self.dtype_ = dtype_
-        self.s, self.d = xMat.shape
-        self.yVec = yVec.reshape(self.s, 1).astype(self.dtype_)
-        self.xMat = (xMat * self.yVec).astype(self.dtype_) #thus the xMat saves the multiplication between data and label
-        self.w = np.zeros((self.d, 1), dtype=self.dtype_)
-        self.p = np.zeros((self.d, 1), dtype=self.dtype_)
-        self.stop = False
+        self.d = A.shape[0]
+        self.A = A.astype(self.dtype_) 
+        self.b = b.astype(self.dtype_)
+
+        self.w = np.zeros((self.d, 1), dtype=self.dtype_) #current update
+        self.p = np.zeros((self.d, 1), dtype=self.dtype_) #update direction
         self.iterations_history = []
         self.local_gradients_history = []
+        self.stop = False
 
         
 
-    def setParam(self, gamma,  isSearch,  etaList):
-
-        
-        if self.dtype_ == np.longdouble:
-            self.gamma = np.longdouble(gamma)
-        elif self.dtype_ == np.double: 
-            self.gamma = float(gamma)
-        else:
-            self.gamma = gamma
+    def setParam(self, a,b,c,isSearch,  etaList):   
 
 
-        self.damping = 1 #damping ratio
         self.isSearch = isSearch
         self.etaList = np.array(etaList, dtype=self.dtype_)
         self.numEta = len(self.etaList)
+        
 
 
     def updateP(self, p):
@@ -49,16 +45,11 @@ class Executor:
         self.w = w.copy().astype(self.dtype_)
       
     
-    def objFun(self, wVec):
+    def objFun(self, w):
         '''
-        f_j (w) = log (1 + exp(-w dot x_j)) + (gamma/2) * ||w||_2^2
-        return the mean of f_j for all local data x_j
+        f (w) = 0.5 w^TAw - bw
         '''
-        zVec = numpy.dot(self.xMat, wVec.reshape(self.d, 1)).astype(self.dtype_)
-        lVec = numpy.log(1 + numpy.exp(-zVec, dtype=self.dtype_))
-        loss = numpy.mean(lVec)
-        reg = self.gamma / 2 * numpy.sum(wVec ** 2)
-        return loss + reg
+        return 0.5*w.T @ self.A @ w - (self.b).T @ w  
     
     def objFunSearch(self):
         objValVec = np.zeros(self.numEta + 1, dtype=self.dtype_)
@@ -68,27 +59,13 @@ class Executor:
         return objValVec
     
     def computeGrad(self):
-        '''
-        Compute the gradient of the objective function using local data
-        '''
-        zVec = numpy.dot(self.xMat, self.w)
-        expZVec = numpy.exp(zVec, dtype=self.dtype_)
-        vec1 = 1 + expZVec
-        vec2 = -1 / vec1
-        grad = numpy.mean(self.xMat * vec2, axis=0)
-        return (grad.reshape(self.d, 1) + self.gamma * self.w).astype(self.dtype_)
+
+        return self.A @ self.w - self.b
 
     def computeGrad_(self,w):
-        '''
-        Compute the gradient of the objective function using local data
-        '''
-        w = w.reshape(self.d, 1).astype(self.dtype_)
-        zVec = numpy.dot(self.xMat, w)
-        expZVec = numpy.exp(zVec, dtype=self.dtype_)
-        vec1 = 1 + expZVec
-        vec2 = -1 / vec1
-        grad = numpy.mean(self.xMat * vec2, axis=0)
-        return (grad.reshape(self.d, 1) + self.gamma * w).astype(self.dtype_)    
+        
+
+        return self.A @ w - self.b  
 
     #Picard, multiple GD steps
     def Picard( self,  lr=1, local_epochs = 5 ):     
@@ -142,6 +119,7 @@ class Executor:
         local_gradients = numpy.hstack( local_gradients, dtype=self.dtype_ )
 
 
+        damping = 1 #damping ratio
         S = numpy.diff( iterations ).astype(self.dtype_) 
         Y = numpy.diff( local_gradients ).astype(self.dtype_) 
         print('S.shape:  ', S.shape)
@@ -150,55 +128,53 @@ class Executor:
         alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
       
         #Update AAP direction with alpha_lstsq solutin
-        pVec =   self.damping *lr* gVec + (S - self.damping *lr* Y) @ alpha_lstsq 
+        pVec =   damping *lr* gVec + (S - damping *lr* Y) @ alpha_lstsq 
         print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
         
         return pVec
 
     
-    #Classical AA(m) method, the different is in each global iteration, we take m+1 AA step
+    #Classical AA(m) method
     def AA( self,  lr=1, m = 5 ):     
 
 
         #intialization
-        x = self.w.copy().astype(self.dtype_)         
+        x = self.w.copy().astype(self.dtype_) 
+        gVec = self.computeGrad_(x).astype(self.dtype_)
+        print( numpy.linalg.norm(gVec) ) 
 
         if self.dtype_ == np.longdouble:
             lr = np.longdouble(lr)
         if self.dtype_ == np.double:  
             lr = float(lr)
-
-        for i in range(m+1):
-            gVec = self.computeGrad_(x).astype(self.dtype_)
-            print( numpy.linalg.norm(gVec) )
-
-            #Update the history points
-            self.iterations_history.append( x.copy() )
-            self.local_gradients_history.append( gVec.copy()  )
-
-            if len( self.iterations_history )> (m+1):
-                self.iterations_history.pop(0)
-                self.local_gradients_history.pop(0)               
-
-                
-            #Update S Y matrix
-            iterations = numpy.hstack( self.iterations_history, dtype=self.dtype_ )
-            local_gradients = numpy.hstack( self.local_gradients_history, dtype=self.dtype_ )
-
-            S = numpy.diff( iterations ).astype(self.dtype_) 
-            Y = numpy.diff( local_gradients ).astype(self.dtype_) 
-            print('S.shape:  ', S.shape)
-    
-            #solve the unconstrained LS problem
-            alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
         
-            #Update AAP direction with alpha_lstsq solutin
-            pVec =   self.damping * lr *gVec + (S - self.damping *lr *Y) @ alpha_lstsq 
-            print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
 
-            x -= pVec
+        #Update the history points
+        self.iterations_history.append( x.copy() )
+        self.local_gradients_history.append( gVec.copy()  )
+
+        if len( self.iterations_history )> (m+1):
+            self.iterations_history.pop(0)
+            self.local_gradients_history.pop(0)               
+
+            
+        #Update S Y matrix
+        iterations = numpy.hstack( self.iterations_history, dtype=self.dtype_ )
+        local_gradients = numpy.hstack( self.local_gradients_history, dtype=self.dtype_ )
+
+        damping = 1 #damping ratio
+        S = numpy.diff( iterations ).astype(self.dtype_) 
+        Y = numpy.diff( local_gradients ).astype(self.dtype_) 
+        print('S.shape:  ', S.shape)
+ 
+        #solve the unconstrained LS problem
+        alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
+      
+        #Update AAP direction with alpha_lstsq solutin
+        pVec =   damping * lr *gVec + (S - damping *lr *Y) @ alpha_lstsq 
+        print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
         
-        return self.w-x
+        return pVec
 
 
     #resAA method
@@ -228,6 +204,7 @@ class Executor:
             local_gradients = numpy.hstack( local_gradients_list, dtype=self.dtype_ )
 
 
+            damping = 1
             S = numpy.diff( iterations ).astype(self.dtype_) 
             Y = numpy.diff( local_gradients ).astype(self.dtype_) 
             print('S.shape:  ', S.shape)
@@ -236,7 +213,7 @@ class Executor:
             alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
         
             #Update AAP direction with alpha_lstsq solutin
-            pVec =   self.damping *lr* gVec + (S - self.damping *lr *Y) @ alpha_lstsq 
+            pVec =   damping *lr* gVec + (S - damping *lr *Y) @ alpha_lstsq 
             print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
 
             x -= pVec
@@ -252,11 +229,7 @@ class Executor:
         gVec = self.computeGrad().astype(self.dtype_)
 
         #step 1, generate the Jacobian J
-        zVec = numpy.dot(self.xMat, self.w)
-        expZVec = numpy.exp(zVec, dtype=self.dtype_)
-        expZVec = numpy.sqrt(expZVec) / (1 + expZVec) 
-        A = self.xMat * (expZVec / numpy.sqrt(self.s, dtype=self.dtype_) )           
-        J = numpy.dot(A.T,A)+self.gamma*numpy.eye(self.d).astype(self.dtype_)  #this the hessian matrix      
+        J = self.A  
 
         #step 2, normalize the b matrix to to aviod too small values of b
         b = gVec.reshape(self.d, 1).astype(self.dtype_) 
@@ -291,11 +264,8 @@ class Executor:
 
         gVec = self.computeGrad().astype(self.dtype_)
 
-        zVec = numpy.dot(self.xMat, self.w)
-        expZVec = numpy.exp(zVec, dtype=self.dtype_)
-        expZVec = numpy.sqrt(expZVec) / (1 + expZVec) 
-        A = self.xMat * (expZVec / numpy.sqrt(self.s, dtype=self.dtype_) )           
-        J = numpy.dot(A.T,A)+self.gamma*numpy.eye(self.d).astype(self.dtype_)
+                   
+        J = self.A
 
         
         pVec = CG.cgSolver_J(J, gVec,  MaxIter=m)   
