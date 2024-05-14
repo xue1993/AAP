@@ -16,6 +16,7 @@ class Executor:
         self.xMat = (xMat * self.yVec).astype(self.dtype_) #thus the xMat saves the multiplication between data and label
         self.w = np.zeros((self.d, 1), dtype=self.dtype_)
         self.p = np.zeros((self.d, 1), dtype=self.dtype_)
+        self.stop = False
 
         
 
@@ -38,6 +39,8 @@ class Executor:
         self.isSearch = isSearch
         self.etaList = np.array(etaList, dtype=self.dtype_)
         self.numEta = len(self.etaList)
+        self.iterations_history = []
+        self.local_gradients_history = []
 
 
     def updateP(self, p):
@@ -91,8 +94,29 @@ class Executor:
         grad = numpy.mean(self.xMat * vec2, axis=0)
         return (grad.reshape(self.d, 1) + self.gamma * w).astype(self.dtype_)    
 
+    #Picard, multiple GD steps
+    def Picard( self,  lr=1, local_epochs = 5 ):     
 
-    #Here we use AA to replace the original Newton
+
+        #intialization
+        x = self.w.copy().astype(self.dtype_) 
+
+        if self.dtype_ == np.longdouble:
+            lr = np.longdouble(lr)
+        if self.dtype_ == np.double:  
+            lr = float(lr)
+       
+
+        #take gd steps, since the last update is is not used, local_epoch plus one
+        for i in range(local_epochs):
+            gradx = self.computeGrad_(x).astype(self.dtype_)  
+            print( numpy.linalg.norm(gradx) )
+            x = x - lr*( gradx )
+        
+        return self.w-x
+
+
+    #AAP method
     def AAP( self,  lr=1, local_epochs = 5 ):     
 
 
@@ -108,7 +132,7 @@ class Executor:
         iterations = []
         local_gradients = []        
 
-        #take gd steps
+        #take gd steps, since the last update is is not used, local_epoch plus one
         for i in range(local_epochs+1):
             gradx = self.computeGrad_(x).astype(self.dtype_)  
             print( numpy.linalg.norm(gradx) )
@@ -122,191 +146,170 @@ class Executor:
         local_gradients = numpy.hstack( local_gradients, dtype=self.dtype_ )
 
 
-        eta = 1
+        damping = 1 #damping ratio
         S = numpy.diff( iterations ).astype(self.dtype_) 
         Y = numpy.diff( local_gradients ).astype(self.dtype_) 
+        print('S.shape:  ', S.shape)
+ 
+        #solve the unconstrained LS problem
+        alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
+      
+        #Update AAP direction with alpha_lstsq solutin
+        pVec =   damping *lr* gVec + (S - damping *lr* Y) @ alpha_lstsq 
+        print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
+        
+        return pVec
+
+    
+    #Classical AA(m) method
+    def AA( self,  lr=1, m = 5 ):     
 
 
-        #three different ways to solve the LS problem
-        #method 1: QR
-        Q, R = np.linalg.qr( Y.astype(np.float64) )
-        Q_T_b = np.dot( Q.T,  gVec.astype(np.float64) )
-        alpha_qr = np.linalg.solve(R, Q_T_b)   
+        #intialization
+        x = self.w.copy().astype(self.dtype_) 
+        gVec = self.computeGrad_(x).astype(self.dtype_)
+        print( numpy.linalg.norm(gVec) ) 
 
-        #method 2: QR with pre_normalization
-        b_norm = numpy.linalg.norm(gVec)
-        Q, R = np.linalg.qr( (Y/b_norm).astype(np.float64) )
-        Q_T_b = np.dot( Q.T,  (gVec/b_norm).astype(np.float64) )
-        alpha_normlized = np.linalg.solve(R, Q_T_b)         
-
-        #method 3: np.linalg.lstsq
-        alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64))[0].astype(self.dtype_)      
-        print( 'norm(solution_lstsq-solutionqr)',  numpy.linalg.norm( alpha_lstsq -  alpha_qr ) , 'qr', numpy.linalg.norm(  alpha_qr ),  'qr_normalization', numpy.linalg.norm( alpha_normlized), 'lstsq', numpy.linalg.norm( alpha_lstsq  ), )
-        print( 'AAP LS solution:', alpha_qr.flatten())  
-
-        #Update AAP direction with QR solution
-        pVec =   1 * (eta * gVec + (S - eta * Y) @ alpha_qr) 
-        print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_qr), 'rtilde', numpy.linalg.norm( Y @ alpha_qr - gVec  )  )
-
-        #LS problem properties
-        norms = np.linalg.norm(Y.astype(self.dtype_), axis=0)
-        Y_normalized = Y.astype(self.dtype_) / norms[np.newaxis, :]
-        U, Sigu, VT = np.linalg.svd(Y_normalized.astype(np.float64), full_matrices=False)
-        print('columnwise_norm: Y, b', numpy.linalg.norm(Y, axis=0), b_norm)
-        print('sigular values of Y', Sigu)  
-
-        #blow are checks
-        #print('ls',numpy.linalg.norm(eta * gVec  - (eta * Y) @ alpha_qr),numpy.linalg.norm(gVec),numpy.linalg.norm(pVec))
-        #print( numpy.linalg.norm(gradx),  '-->',  numpy.linalg.norm( self.computeGrad_(self.w - pVec) + grad_gap) )
-        print("\n")
-        print( 'columnwise_norm: S', numpy.linalg.norm(S, axis=0))
-        print('iterations', numpy.linalg.norm(iterations, axis=0), '\nlocal_gradients', numpy.linalg.norm(local_gradients, axis=0))
-
-        # smallest singular value
-        norms = np.linalg.norm(local_gradients.astype(self.dtype_), axis=0)
-        local_gradients_normalized = local_gradients.astype(self.dtype_) / norms[np.newaxis, :]
-        U, Sigu, VT = np.linalg.svd(local_gradients_normalized[:,:-1].astype(np.float64), full_matrices=False)
-
-
-        #optimization gain
-        theta = numpy.linalg.norm(gVec-Y @ alpha_qr) /numpy.linalg.norm(gVec)
-        #Newton-GMRES gain
-        newton_gain, theory_gain = self.computeNewton_gain(self.computeGrad(), local_epochs)
-        print('\ntheory_Upper_Bound:', theory_gain)
-        print('Newton-GMRES gain:', newton_gain)
-        print('AAP gain', theta )
-        print('sigular values of M_t', Sigu)
+        if self.dtype_ == np.longdouble:
+            lr = np.longdouble(lr)
+        if self.dtype_ == np.double:  
+            lr = float(lr)
         
 
-        #test the covnergence of S Y
-        self.testSY(gVec, local_epochs, S,Y, lr)        
+        #Update the history points
+        self.iterations_history.append( x.copy() )
+        self.local_gradients_history.append( gVec.copy()  )
+
+        if len( self.iterations_history )> (m+1):
+            self.iterations_history.pop(0)
+            self.local_gradients_history.pop(0)               
+
+            
+        #Update S Y matrix
+        iterations = numpy.hstack( self.iterations_history, dtype=self.dtype_ )
+        local_gradients = numpy.hstack( self.local_gradients_history, dtype=self.dtype_ )
+
+        damping = 1 #damping ratio
+        S = numpy.diff( iterations ).astype(self.dtype_) 
+        Y = numpy.diff( local_gradients ).astype(self.dtype_) 
+        print('S.shape:  ', S.shape)
+ 
+        #solve the unconstrained LS problem
+        alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
+      
+        #Update AAP direction with alpha_lstsq solutin
+        pVec =   damping * lr *gVec + (S - damping *lr *Y) @ alpha_lstsq 
+        print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
         
-        return pVec,theta,min(Sigu),newton_gain
+        return pVec
+
+
+    #resAA method
+    def resAA( self,  lr=1, m = 5 ):     
+
+
+        #intialization
+        x = self.w.copy().astype(self.dtype_) 
+
+        if self.dtype_ == np.longdouble:
+            lr = np.longdouble(lr)
+        if self.dtype_ == np.double:  
+            lr = float(lr)
+
+        iterations_list = []
+        local_gradients_list = []        
+
+        #take gd steps
+        for i in range(m+1):
+            gVec = self.computeGrad_(x).astype(self.dtype_)  
+            print( numpy.linalg.norm(gVec) )
+
+            iterations_list.append( x.copy() )
+            local_gradients_list.append( gVec.copy()  )
+            
+            iterations = numpy.hstack( iterations_list, dtype=self.dtype_ )
+            local_gradients = numpy.hstack( local_gradients_list, dtype=self.dtype_ )
+
+
+            damping = 1
+            S = numpy.diff( iterations ).astype(self.dtype_) 
+            Y = numpy.diff( local_gradients ).astype(self.dtype_) 
+            print('S.shape:  ', S.shape)
+ 
+            #solve the unconstrained LS problem
+            alpha_lstsq = np.linalg.lstsq(Y.astype(np.float64), gVec.astype(np.float64),rcond=-1)[0].astype(self.dtype_)      
+        
+            #Update AAP direction with alpha_lstsq solutin
+            pVec =   damping *lr* gVec + (S - damping *lr *Y) @ alpha_lstsq 
+            print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
+
+            x -= pVec
+        
+        return self.w-x
 
 
 
 
-    def computeNewton_gain(self, gVec, m):
-        print("\nNewton-GMRES")
+    def Newton_GMRES(self, m):
+    #This is a fake Newton-GMRES solver,
 
+        gVec = self.computeGrad().astype(self.dtype_)
+
+        #step 1, generate the Jacobian J
         zVec = numpy.dot(self.xMat, self.w)
         expZVec = numpy.exp(zVec, dtype=self.dtype_)
-        expZVec = numpy.sqrt(expZVec) / (1 + expZVec)     
-
+        expZVec = numpy.sqrt(expZVec) / (1 + expZVec) 
         A = self.xMat * (expZVec / numpy.sqrt(self.s, dtype=self.dtype_) )           
         J = numpy.dot(A.T,A)+self.gamma*numpy.eye(self.d).astype(self.dtype_)  #this the hessian matrix      
 
-        
+        #step 2, normalize the b matrix to to aviod too small values of b
         b = gVec.reshape(self.d, 1).astype(self.dtype_) 
         bnorm = numpy.linalg.norm(b)
-        print('residual norm:', bnorm)
         b = b/bnorm #normalize b
 
-        #generate the Krylov sequence Af_t, A^2f_t,... Note that it is different with the true krylov subspace f_t, Af_t,A^2f_t,...
+        #step 3, generate the Krylov sequence Af_t, A^2f_t,... Note that it is different with the true krylov subspace f_t, Af_t,A^2f_t,...
         p = b.astype(self.dtype_)   #since the residual gVec is converging to 0, so it's better to normalize it now
         basis = []  #this basis is with A_t
         for i in range(m):
             p = J @ p
             basis.append( p.copy() )
         basis = numpy.hstack( basis, dtype=self.dtype_ )
-        print('Newton basis: columnwise_norm: ',numpy.linalg.norm(basis, axis=0) )
-        print('shape', basis.shape)        
-        norms = np.linalg.norm(basis.astype(self.dtype_), axis=0)
-        basis_normalized = basis.astype(self.dtype_) / norms[np.newaxis, :]
-        U, Sigu, VT = np.linalg.svd(basis_normalized.astype(np.float64), full_matrices=False)
-        print('singular values', Sigu)
+        print(basis.shape)
 
 
-        #method 1 to get the projection of AK_m(A, f_t)
-        solution_lstsq  = numpy.linalg.lstsq(basis.astype(np.float64), b.astype(np.float64))[0]
+        #step 4, solve the projection Ap. the solution stability of influenced by the conditon number, but the condition number could be very small with large m.
+        solution_lstsq  = numpy.linalg.lstsq(basis.astype(np.float64), b.astype(np.float64),rcond=None)[0]
         
-        #method 2
-        Q, R = np.linalg.qr(basis.astype(np.float64))
-        Q_T_b = np.dot(Q.T, b.astype(np.float64))
-        solution_qr = np.linalg.solve(R, Q_T_b)        
-        print( 'norm(solution_lstsq-solutionqr)',  numpy.linalg.norm( solution_lstsq -  solution_qr )  )  
 
 
-        #Now we know the projection Ap as basis @ solution_qr, we need to solve the real p
-        r_ = (basis @ solution_qr).astype(np.float64)
+        #step 5,  we know the projection Ap as basis @ solution_lstsq, we need to solve the real p
+        r_ = (bnorm*basis @ solution_lstsq).astype(np.float64)
         # solve Ap = (Ap)
-        p_solve = np.linalg.solve( J.astype(np.float64), r_ )
+        pVec = np.linalg.solve( J.astype(np.float64), r_ )       
+        print( 'Length of p:',  numpy.linalg.norm( pVec ) ) 
+      
 
+        return  pVec
 
-        res = numpy.linalg.norm(basis @ solution_qr - b )   
-        print( 'Newton-GMRES projection solution:', solution_qr.flatten())  
-        #print( 'Newton-GMRES p solution:', p_solve.flatten())  
-        print( '   length of p:',  numpy.linalg.norm(  p_solve ) )   
-        print( '   residual/|f_t|:', res)
-        
+    def Newton_CG(self, m):
 
+        gVec = self.computeGrad().astype(self.dtype_)
 
-        cond_number = np.linalg.cond(J.astype(np.float64))       
-        sig = numpy.linalg.svd(J.astype(np.float64), compute_uv=False)        
-        print('\nHessian info: cond_number :', cond_number)#double compute the condition number to check
-        print('sigular values : ' , sig[0],sig[-1])
-        print(J.dtype) 
-        s = numpy.sqrt( cond_number ) 
-        print('theoretical upper bound',2 * (s - 1)**m / (s + 1)**m) #this is the famous bound with condtion number   
-
-        
-
-        return res, 2 * (s - 1)**m / (s + 1)**m
-
-
-    def testSY(self, gVec, m, S,Y,lr):
-        print("\nSY Convergence")
-        print('lr', lr)
-        print( 'S[0]-lr*f_t', numpy.linalg.norm(S[:,0].reshape(self.d, 1) + lr* gVec.reshape(self.d, 1) ) )
-
-  
-        if self.dtype_ == np.longdouble:
-            lr = np.longdouble(lr)
-        if self.dtype_ == np.double:  
-            lr = float(lr)
-
-        #normalize S Y b, otherwise all--> 0
-        normft = numpy.linalg.norm(gVec.astype(self.dtype_))         
-        b = (gVec.astype(self.dtype_)/normft).reshape(self.d, 1) 
-        S = S.astype(self.dtype_)/normft
-        Y = Y.astype(self.dtype_)/normft
-        print('(S[0]-lr*f_t)/|f_t|(floating error occur):',numpy.linalg.norm(S[:,0].reshape(self.d, 1) + lr* b )  )
-
-
-        #below we construct the limit matrix of S and Y, both normalize
         zVec = numpy.dot(self.xMat, self.w)
         expZVec = numpy.exp(zVec, dtype=self.dtype_)
-        expZVec = numpy.sqrt(expZVec) / (1 + expZVec)    
-        A = self.xMat * (expZVec / numpy.sqrt(self.s, dtype=self.dtype_))       
-        J = numpy.dot(A.T,A)+ self.gamma *numpy.eye(self.d).astype(self.dtype_) 
-        G = numpy.eye(self.d).astype(self.dtype_) - lr*J #g'(x_t)
+        expZVec = numpy.sqrt(expZVec) / (1 + expZVec) 
+        A = self.xMat * (expZVec / numpy.sqrt(self.s, dtype=self.dtype_) )           
+        J = numpy.dot(A.T,A)+self.gamma*numpy.eye(self.d).astype(self.dtype_)
 
-        p = b.copy()   
-        basis = []
-        for i in range(m):            
-            basis.append( p.copy() )
-            p = G @ p #note the difference between newton method
-
-        basis = -lr*numpy.hstack( basis, dtype=self.dtype_ ) #this is the theoretical limit of S
-        Y_limit = J @ basis
-
-        Y_error =Y_limit - Y
-        S_error = basis - S
-        ASY_error = Y - J @ S
-
-        norms = np.linalg.norm(basis.astype(self.dtype_), axis=0)
-        G_normalized = basis / norms[np.newaxis, :]
-        U, Singu, VT = np.linalg.svd(G_normalized.astype(np.float64), full_matrices=False)
+        
+        pVec = CG.cgSolver_J(J, gVec,  MaxIter=m)   
+        print( 'Length of p:',  numpy.linalg.norm( pVec ) )   
+        
+        return pVec
 
 
-        print('Y_error', numpy.linalg.norm(Y_error, axis=0),
-                    '\nS_error', numpy.linalg.norm(S_error, axis=0),
-                    '\nASY_error', numpy.linalg.norm(ASY_error, axis=0),
-                    '\nsingular values of G_t', Singu)
 
-        return None
-
-
+    
 
     
     

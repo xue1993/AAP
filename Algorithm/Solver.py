@@ -4,71 +4,85 @@ import sys
 # Append the home directory to system path for importing custom modules
 home_dir = '../'
 sys.path.append(home_dir)
-from Algorithm.ExecutorLogistic import Executor
+from Algorithm.Logistic_test import Executor as  Logistic_test
+from Algorithm.ExecutorLogistic import Executor as Logistic
 
 EtaList = 1 / (4 ** np.arange(0, 10))
 
 class Solver:
     
-    def __init__(self, local_epochs=5, eta0=1.0, C=1.0, dtype_ = np.double):
+    def __init__(self, local_epochs=5, eta0=1.0, C=1.0, dtype_ = np.double, algo_='AAP', problem_='logistic'):
 
         self.tolConverge = 1e-13
         self.eta0 = float(eta0)
         self.decay_rate = float(C)
         self.local_epochs = int(local_epochs)
-        self.executorList = []
+        self.executor = None
         self.dtype_ = dtype_
+        self.algo = algo_ #choices: AAP, Newton ,Newton-CG,Newton-GMRES, AA, resAA
+        self.problem = problem_
+        
 
     def fit(self, xMat, yVec):
         """
-        Fit model by partitioning data and initializing executors.
-        
-        Parameters:
-        xMat (numpy.ndarray): Matrix of input features.
-        yVec (numpy.ndarray): Vector of target labels.
+        pass the data
         """
+        #below is pass the logistic regression data with optional 
         n, d = xMat.shape
-        #perm = np.random.permutation(n)
-        #xMat, yVec = xMat[perm, :], yVec[perm, :]
-        self.executorList.append(Executor(xMat, yVec, dtype_= self.dtype_))
+        if self.problem == 'Logistic_test':
+            self.executor = Logistic_test(xMat, yVec, dtype_= self.dtype_)
+        else:
+            self.executor = Logistic(xMat, yVec, dtype_= self.dtype_)
         self.n, self.d = n, d
 
     def train(self, gamma, wopt, maxIter=20, isSearch=False, newtonTol=1e-100, newtonMaxIter=20):
 
-        wnorm = np.linalg.norm(wopt)
+        wnorm = np.linalg.norm(wopt.astype(np.float64))
         w = np.zeros((self.d, 1), dtype=np.float64)
         self.errorList = []
+        err = 1
+        self.errorList.append(err)
+
         self.thetaList = []
         self.newtongainList = []
         self.sigmaList = []
 
         self.etaList = EtaList
         self.numEta = len(self.etaList)
+
+
         
-        for executor in self.executorList:
-            executor.setParam(gamma, newtonTol, newtonMaxIter, isSearch, self.etaList)
-
-
-        err = 1
-        self.errorList.append(err)
+        self.executor.setParam(gamma, newtonTol, newtonMaxIter, isSearch, self.etaList)     
 
         for t in range(maxIter):
-            print(f"\n============== Iteration {t+1}: ====err={np.linalg.norm(w - wopt)}=========")
+            print(f"\n============== Iteration {t+1}: ====error={np.linalg.norm(w - wopt)}=========")
             w_old = w.copy()
 
-            executor = self.executorList[0]
-            p, theta, sigma, newton_gain = executor.AAP(lr=self.eta0, local_epochs=self.local_epochs)
-            executor.updateP(p)            
-            executor.updateW()
+            if  self.problem == 'Logistic_test':
+                p, theta, sigma, newton_gain = self.executor.AAP(lr=self.eta0, local_epochs=self.local_epochs)   
+                self.thetaList.append(theta)
+                self.newtongainList.append(newton_gain)
+                self.sigmaList.append( sigma )
+            elif self.algo == 'AAP':
+                p =  self.executor.AAP(lr=self.eta0, local_epochs=self.local_epochs)
+            elif self.algo == 'AA':
+                p =  self.executor.AA(lr=self.eta0, m=self.local_epochs)
+            elif self.algo == 'resAA':
+                p =  self.executor.resAA(lr=self.eta0, m=self.local_epochs)
+            elif self.algo == 'Newton_CG':
+                p =  self.executor.Newton_CG(m=self.local_epochs)
+            elif self.algo == 'Newton_GMRES':
+                p =  self.executor.Newton_GMRES( m=self.local_epochs)
+            else: 
+                p =  self.executor.Picard(lr=self.eta0, local_epochs=self.local_epochs)
+               
+
+            self.executor.updateP(p)            
+            self.executor.updateW()
             w -= p
-            
             err = np.linalg.norm(w - wopt) / wnorm
             self.errorList.append(err)
-            self.thetaList.append(theta)
-            self.newtongainList.append(newton_gain)
-            self.sigmaList.append( sigma )
-            
-            if err < self.tolConverge or np.isnan(w).any():
+            if err < self.tolConverge or np.isnan(w).any() or self.executor.stop:
                 print(f"Iteration {t}: Convergence achieved or numerical instability detected.")
                 break
 
