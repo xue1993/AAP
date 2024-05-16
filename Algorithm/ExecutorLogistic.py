@@ -104,7 +104,7 @@ class Executor:
        
 
         #take gd steps, since the last update is is not used, local_epoch plus one
-        for i in range(local_epochs):
+        for i in range(local_epochs+1):
             gradx = self.computeGrad_(x).astype(self.dtype_)  
             print( numpy.linalg.norm(gradx) )
             x = x - lr*( gradx )
