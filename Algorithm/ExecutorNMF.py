@@ -3,16 +3,16 @@ import numpy as np
 
 
 class Executor:
-    def __init__(self, A, k, W=None, H=None, dtype_=np.double):
+    def __init__(self, A, k, W, H, dtype_=np.double):
         
         self.dtype_ = dtype_
         self.m = A.shape[0]
         self.n = A.shape[1]
         self.k = k 
         
-        self.A = A.astype(self.dtype_)
-        self.W = W    
-        self.H = H 
+        self.A = A.copy().astype(self.dtype_)
+        self.W = W.copy()    
+        self.H = H.copy() 
 
         #update direction
         self.pW = np.zeros((self.m, self.k), dtype=self.dtype_) 

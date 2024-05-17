@@ -31,7 +31,7 @@ class Solver:
         self.W = W0.copy() if W0 is not None else np.random.rand(self.m, self.k).astype(self.dtype_)        
         self.H = H0.copy() if H0 is not None else np.random.rand(self.k, self.n).astype(self.dtype_)
 
-        self.executor = NMF(A, k, W=self.W,H=self.H, dtype_= self.dtype_)
+        self.executor = NMF(A, k, self.W, self.H, dtype_= self.dtype_)
         
 
         
