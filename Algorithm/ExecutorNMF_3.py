@@ -197,10 +197,14 @@ class Executor:
         pH = pVec[(self.m*self.k):].reshape( self.k, self.n)
 
         #MODIFY TEH LAST FUNCTION VALUES
-        self.funcVals[-1] = self.objFun( self.W-pW, self.H-pH) 
+        W = self.W-pW
+        W[W < 0] = 0
+        H = self.H-pH
+        H[H < 0] = 0
+        self.funcVals[-1] = self.objFun( W, H) 
         print( self.funcVals)
         
-        return pW,pH
+        return self.W-W, self.H-H
 
     
     #Classical AA(m) method
@@ -241,7 +245,10 @@ class Executor:
 
             
             W -= pVec[:(self.m*self.k)].reshape( self.m, self.k)
+            W[W < 0] = 0
             H -= pVec[(self.m*self.k):].reshape( self.k, self.n)
+            H[H < 0] = 0
+            
 
             self.funcVals.append( self.objFun( W,H) )
             print( self.funcVals[-1] )
@@ -285,7 +292,9 @@ class Executor:
             print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
 
             W -= pVec[:(self.m*self.k)].reshape( self.m, self.k)
+            W[W < 0] = 0
             H -= pVec[(self.m*self.k):].reshape( self.k, self.n)
+            H[H < 0] = 0
 
             self.funcVals.append( self.objFun( W,H) )
             print( self.funcVals[-1] )

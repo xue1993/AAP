@@ -4,7 +4,7 @@ import sys
 # Append the home directory to system path for importing custom modules
 home_dir = '../'
 sys.path.append(home_dir)
-from Algorithm.ExecutorNMF import Executor as NMF
+from Algorithm.ExecutorNMF_3 import Executor as NMF
 EtaList = 1 / (4 ** np.arange(0, 10))
 
 class Solver:
@@ -29,18 +29,22 @@ class Solver:
         self.m,self.n = A.shape
         self.k = k
         self.W = W0.copy() if W0 is not None else np.random.rand(self.m, self.k).astype(self.dtype_)        
-        self.H = H0.copy() if H0 is not None else np.random.rand(self.k, self.n).astype(self.dtype_)
+        self.H = H0.copy() if H0 is not None else np.zeros((self.k, self.n)).astype(self.dtype_)
 
         self.executor = NMF(A, k, self.W, self.H, dtype_= self.dtype_)
         
 
         
 
-    def train(self, maxIter=20, isSearch=False):
+    def train(self, maxIter=20, isSearch=False, warmup=True, damping=.1):   
         
 
-        W = self.W.copy()    
-        H = self.H.copy() 
+        self.etaList = EtaList
+        self.numEta = len(self.etaList)        
+        self.executor.setParam(None, isSearch, self.etaList, warmup_=warmup, damping_=damping)   #warm up included
+
+        W = self.executor.W.copy()    
+        H = self.executor.H.copy()  
 
         self.errorList = []
         err = self.executor.objFun(W,H)
@@ -49,11 +53,6 @@ class Solver:
         self.thetaList = []
         self.newtongainList = []
         self.sigmaList = []
-
-        self.etaList = EtaList
-        self.numEta = len(self.etaList)
-        
-        self.executor.setParam(None, isSearch, self.etaList)     
 
         for t in range(maxIter):
             print(f"\n============== Iteration {t+1}: ====error={err}=========")
@@ -80,5 +79,7 @@ class Solver:
             if err < self.tolConverge or np.isnan(W).any() or np.isnan(H).any() or self.executor.stop:
                 print(f"Iteration {t}: Convergence achieved, or stop={ self.executor.stop}.")
                 break
+
+        self.funcValsPerPicard = self.executor.funcVals
 
         return self.errorList
