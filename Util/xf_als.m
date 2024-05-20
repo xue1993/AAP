@@ -54,14 +54,13 @@ while iter < max_iters
     W = W ./ sqrt(sum(W.^2, 1));
     
     % Update H
-    for i = 1:n
-        H(:, i) = lsqnonneg(W, A(:, i));
-    end
-    
+    H = linsolve(W, A);
+    H(H < 0) = 0;
+
     % Update W
-    for i = 1:m
-        W(i, :) = lsqnonneg(H', A(i, :)')';
-    end
+    W = linsolve(H', A')';
+    W(W < 0) = 0;
+    
     
     % Calculate approximation error
     approx_A = W * H;

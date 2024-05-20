@@ -1,6 +1,5 @@
 import numpy
 import numpy as np
-from scipy.optimize import nnls
 
 
 class Executor:
@@ -9,12 +8,10 @@ class Executor:
         self.dtype_ = dtype_
         self.m = A.shape[0]
         self.n = A.shape[1]
-        self.k = k
-        self.Wdim = self.m * self.k 
+        self.k = k 
         
         self.A = A.copy().astype(self.dtype_)
-        self.W = W.copy()        
-        self.W[self.W < 0] = 0    
+        self.W = W.copy()    
         self.H = H.copy() 
 
         #update direction
@@ -44,7 +41,7 @@ class Executor:
         for i in range(5):
             self.iterations_history.append(  self.flatten_(W,H).copy() )
 
-            W,H = self.oneANNLS_(W.copy(),H.copy())
+            W,H = self.oneALS_(W.copy(),H.copy())
             self.funcVals.append( self.objFun( W,H) )
             print( self.funcVals[-1] )             
              
@@ -97,8 +94,9 @@ class Executor:
         objValVec[-1] = self.objFun(self.W , self.H)
         return objValVec
     
+    def oneALS(self):
 
-    def oneANNLS_(self,W,H):
+        W = self.W.copy()
 
         # Normalize W 
         norm2 = np.sqrt(np.sum(W**2, axis=0))
@@ -107,12 +105,30 @@ class Executor:
             W[:, toNormalize] = W[:, toNormalize] / norm2[toNormalize]
 
         # Update H
-        for i in range(self.n):
-            H[:, i], _ = nnls(W, self.A[:, i])
-        
+        H = np.linalg.lstsq(W, self.A, rcond=None)[0]
+        H[H < 0] = 0
+
         # Update W
-        for i in range(self.m):
-            W[i, :], _ = nnls(H.T, self.A[i, :])       
+        W = np.linalg.lstsq(H.T, self.A.T, rcond=None)[0].T
+        W[W < 0] = 0
+
+        return W, H
+
+    def oneALS_(self,W,H):
+
+        # Normalize W 
+        norm2 = np.sqrt(np.sum(W**2, axis=0))
+        toNormalize = norm2 > 0
+        if np.any(toNormalize):
+            W[:, toNormalize] = W[:, toNormalize] / norm2[toNormalize]
+
+        # Update H
+        H = np.linalg.lstsq(W, self.A, rcond=None)[0]
+        H[H < 0] = 0
+
+        # Update W
+        W = np.linalg.lstsq(H.T, self.A.T, rcond=None)[0].T
+        W[W < 0] = 0        
 
         return W, H
     
@@ -130,7 +146,7 @@ class Executor:
 
         #take gd steps, since the last update is is not used, local_epoch plus one
         for i in range(local_epochs+1):
-            W,H = self.oneANNLS_(W.copy(),H.copy())
+            W,H = self.oneALS_(W.copy(),H.copy())
 
             self.funcVals.append( self.objFun( W,H) )
             print( self.funcVals[-1] )
@@ -155,7 +171,7 @@ class Executor:
         for i in range(local_epochs+1):
             WH_list.append(  self.flatten_(W,H).copy() )
 
-            W,H = self.oneANNLS_(W.copy(),H.copy())
+            W,H = self.oneALS_(W.copy(),H.copy())
             self.funcVals.append( self.objFun( W,H) )
             print( self.funcVals[-1] )
 
@@ -197,12 +213,10 @@ class Executor:
         for i in range(m+1):
 
             self.iterations_history.append(  self.flatten_(W,H).copy() )
-
-            print( self.objFun( W, H ) )
-            W_,H_ = self.oneANNLS_(W.copy(),H.copy())
-            print( 'AFter: ', self.objFun( W_,H_ ) )
              
-            self.residuals_history.append(   self.flatten_( W_,H_ )  - self.iterations_history[-1]  )
+            print( self.objFun( W,H) )
+             
+            self.residuals_history.append(   self.flatten_( *self.oneALS_(W.copy(),H.copy()) )  - self.iterations_history[-1]  )
 
             while len( self.iterations_history )> (m+1):
                 self.iterations_history.pop(0)
@@ -252,10 +266,8 @@ class Executor:
             WH_list.append(  self.flatten_(W,H).copy() )
 
             print( self.objFun( W,H) )
-            W_,H_ = self.oneANNLS_(W.copy(),H.copy())
-            print( 'AFter: ', self.objFun( W_,H_ ) )
 
-            residuals_list.append(  self.flatten_( W_,H_ )  - WH_list[-1] )
+            residuals_list.append(  self.flatten_( *self.oneALS_(W.copy(),H.copy()) )  - WH_list[-1] )
             
             iterations = numpy.hstack( WH_list, dtype=self.dtype_ )
             residuals = numpy.hstack( residuals_list, dtype=self.dtype_ )
