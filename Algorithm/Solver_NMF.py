@@ -4,7 +4,8 @@ import sys
 # Append the home directory to system path for importing custom modules
 home_dir = '../'
 sys.path.append(home_dir)
-from Algorithm.ExecutorNMF_WN import Executor as NMF3
+from Algorithm.ExecutorNMF_ALS import Executor as NMF_ALS
+from Algorithm.ExecutorNMF_WN import Executor as NMF_ANNLS
 from Algorithm.ExecutorNMF_N import Executor as NMF2
 from Algorithm.ExecutorNMF import Executor as NMF1
 EtaList = 1 / (4 ** np.arange(0, 10))
@@ -35,10 +36,12 @@ class Solver:
 
         if NMF_== 1:
             self.executor = NMF1(A, k, self.W, self.H, dtype_= self.dtype_)
-        elif NMF_ ==2:
+        elif NMF_ == 2:
             self.executor = NMF2(A, k, self.W, self.H, dtype_= self.dtype_)
+        elif NMF_ == 4:
+            self.executor = NMF_ALS(A, k, self.W, self.H, dtype_= self.dtype_)
         else: 
-            self.executor = NMF3(A, k, self.W, self.H, dtype_= self.dtype_)
+            self.executor = NMF_ANNLS(A, k, self.W, self.H, dtype_= self.dtype_)
 
         
 

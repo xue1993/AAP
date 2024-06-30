@@ -24,15 +24,27 @@ class Executor:
         self.local_gradients_history = []
         self.stop = False
 
+        self.errorPerPicard = []
+        self.wopt = np.zeros((self.d, 1), dtype=self.dtype_)
+        self.woptnorm =1
+
+
         
 
-    def setParam(self, a, isSearch,  etaList):   
+    def setParam(self, a, wopt, isSearch,  etaList):   
+
+        self.wopt = wopt.astype(self.dtype_)
+        self.woptnorm = np.linalg.norm(self.wopt.astype(np.float64))
+        self.errorPerPicard.append(  np.linalg.norm(self.w - self.wopt) / self.woptnorm )
+
 
         self.damping = 1 #damping ratio
         self.isSearch = isSearch
         self.etaList = np.array(etaList, dtype=self.dtype_)
         self.numEta = len(self.etaList)
         
+    def warmUp(self,  lr=1 ):  
+        return None
 
 
     def updateP(self, p):
@@ -81,10 +93,11 @@ class Executor:
        
 
         #take gd steps, since the last update is is not used, local_epoch plus one
-        for i in range(local_epochs):
+        for i in range(local_epochs+1):
             gradx = self.computeGrad_(x).astype(self.dtype_)  
             print( numpy.linalg.norm(gradx) )
             x = x - lr*( gradx )
+            self.errorPerPicard.append(  np.linalg.norm(x- self.wopt) / self.woptnorm )
         
         return self.w-x
 
@@ -114,6 +127,7 @@ class Executor:
             local_gradients.append( gradx.copy()  )
 
             x = x - lr*( gradx )
+            self.errorPerPicard.append(  np.linalg.norm(x- self.wopt) / self.woptnorm )
 
         iterations = numpy.hstack( iterations, dtype=self.dtype_ )
         local_gradients = numpy.hstack( local_gradients, dtype=self.dtype_ )
@@ -129,6 +143,7 @@ class Executor:
         #Update AAP direction with alpha_lstsq solutin
         pVec =   self.damping *lr* gVec + (S - self.damping *lr* Y) @ alpha_lstsq 
         print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
+        self.errorPerPicard[-1] = np.linalg.norm(self.w - pVec- self.wopt) / self.woptnorm
         
         return pVec
 
@@ -151,7 +166,7 @@ class Executor:
             self.iterations_history.append( x.copy() )
             self.local_gradients_history.append( gVec.copy()  )
 
-            if len( self.iterations_history )> (m+1):
+            while len( self.iterations_history )> (m+1):
                 self.iterations_history.pop(0)
                 self.local_gradients_history.pop(0)               
 
@@ -172,6 +187,7 @@ class Executor:
             print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
 
             x -= pVec
+            self.errorPerPicard.append(  np.linalg.norm(x- self.wopt) / self.woptnorm )
         
         return self.w-x
 
@@ -215,6 +231,7 @@ class Executor:
             print( 'Length of ptilde:',  numpy.linalg.norm( S @ alpha_lstsq), 'rtilde', numpy.linalg.norm( Y @ alpha_lstsq - gVec  )  )
 
             x -= pVec
+            self.errorPerPicard.append(  np.linalg.norm(x- self.wopt) / self.woptnorm )
         
         return self.w-x
 

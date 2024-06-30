@@ -4,10 +4,7 @@ import sys
 # Append the home directory to system path for importing custom modules
 home_dir = '../'
 sys.path.append(home_dir)
-from Algorithm.LogisticTest import Executor as  LogisticTest
-from Algorithm.ExecutorLogistic import Executor as Logistic
-from Algorithm.ExecutorQuadratic import Executor as Quadratic
-
+from Algorithm.ExecutorLogistic_plot import Executor as  Logistic
 EtaList = 1 / (4 ** np.arange(0, 10))
 
 class Solver:
